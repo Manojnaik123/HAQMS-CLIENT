@@ -258,9 +258,8 @@ export default function Dashboard() {
       });
       const data = await res.json();
 
-      if (res.ok) {
-
-        setCheckinMessage(`Checked in! Generated Token #${data.token.tokenNumber}`);
+      if (data.success) {        
+        setCheckinMessage(`Checked in! Generated Token #${data.data.tokenNumber}`);
         if (user.role === 'DOCTOR') fetchDoctorWorklist();
       } else {
         setCheckinMessage(`Error check-in: ${data.error}`);
