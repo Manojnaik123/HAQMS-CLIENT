@@ -3,23 +3,31 @@
 import { useState, useEffect } from 'react';
 import Navbar from '@/components/common/Navbar';
 import { Activity, Bell, Monitor, RefreshCw, AlertCircle } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function QueueMonitor() {
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Duplicated config state just to add minor code smell
   const [refreshCount, setRefreshCount] = useState(0);
 
-  // HARDCODED API BASE URL: Duplicated from AuthContext (code duplication smell)
-  const API_BASE_URL = 'http://localhost:5000/api';
+  const { API_BASE_URL } = useAuth()
+
 
   const fetchQueueData = async () => {
     try {
       // Insecure: Fetches queue without checking credentials (it's a public dashboard, which is fine, 
       // but it uses the hardcoded API domain)
-      const res = await fetch(`${API_BASE_URL}/queue`);
+      const res = await fetch(`${API_BASE_URL}/queue`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      console.log('response', res);
+
+
       if (!res.ok) {
         throw new Error('Failed to retrieve active token queue.');
       }
@@ -65,7 +73,7 @@ export default function QueueMonitor() {
         waiting: [],
       };
     }
-    
+
     if (token.status === 'CALLING') {
       groups[docId].calling = token;
     } else if (token.status === 'WAITING') {
@@ -77,7 +85,7 @@ export default function QueueMonitor() {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      
+
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 sm:p-8">
         {/* Header Dashboard Banner */}
         <div className="glass p-6 sm:p-8 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -94,7 +102,7 @@ export default function QueueMonitor() {
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/15 text-teal-600 dark:text-teal-400 text-xs font-bold uppercase tracking-wide border border-teal-500/20">
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />

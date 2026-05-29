@@ -1,46 +1,52 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { User, Lock, Activity, Eye, EyeOff } from 'lucide-react';
+import { loginSchema } from '@/schemas/auth';
+import { useRouter } from 'next/navigation';
 
 export default function Login() {
   const { login, error: authError, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
-  // Local validation issues
   const [validationError, setValidationError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const { user } = useAuth()
+
+  const router = useRouter()
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setValidationError('');
+    setEmailError('');
+    setPasswordError('');
 
-    // INCONSISTENT VALIDATION BUG:
-    // Simple basic regex that is flawed (e.g. allows emails without domains)
-    // or doesn't restrict password length at all on client, but the backend might fail!
-    const emailRegex = /^[^\s@]+@[^\s@]+$/; // This is a standard regex, but let's see,
-    // junior dev wrote it to skip length check, letting empty or weak passwords through to the DB:
-    if (!email) {
-      setValidationError('Please enter your email address.');
-      return;
-    }
-    
-    if (!emailRegex.test(email)) {
-      setValidationError('Please enter a valid email format.');
+    const parsed = loginSchema.safeParse({ email, password });
+
+    if (!parsed.success) {
+      const { fieldErrors } = parsed.error.flatten();
+      if (fieldErrors.email?.[0]) setEmailError(fieldErrors.email[0]);
+      if (fieldErrors.password?.[0]) setPasswordError(fieldErrors.password[0]);
       return;
     }
 
-    // Notice we do NOT check password length here (even though registration requires it),
-    // causing inconsistent user experiences and letting brute force slide.
-    
-    const result = await login(email, password);
+    const result = await login(parsed.data.email, parsed.data.password);
+
     if (!result.success) {
       setValidationError(result.error || 'Invalid credentials');
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      router.push('/dashboard')
+    }
+  }, [user])
 
   return (
     <div className="flex flex-col min-h-screen justify-center items-center py-12 px-6 lg:px-8">
@@ -60,7 +66,6 @@ export default function Login() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="glass py-8 px-6 shadow-xl rounded-2xl border border-slate-200 dark:border-slate-800">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {/* Validation Display */}
             {(validationError || authError) && (
               <div className="p-3 text-sm bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-lg">
                 {validationError || authError}
@@ -78,13 +83,14 @@ export default function Login() {
                 <input
                   id="email"
                   name="email"
-                  type="text" // Inconsistent: using text instead of email type to disable native validations
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2 border border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all text-sm"
                   placeholder="admin@haqms.com"
                 />
               </div>
+              {emailError && <p className="mt-1 text-xs text-rose-500">{emailError}</p>}
             </div>
 
             <div>
@@ -112,6 +118,7 @@ export default function Login() {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
+              {passwordError && <p className="mt-1 text-xs text-rose-500">{passwordError}</p>}
             </div>
 
             <div>
@@ -125,29 +132,19 @@ export default function Login() {
             </div>
           </form>
 
-          {/* Quick seeded login panel */}
           <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Seeded Demo Credentials</h4>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => { setEmail('admin@haqms.com'); setPassword('password123'); }}
-                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300"
-              >
+              <button type="button" onClick={() => { setEmail('admin@haqms.com'); setPassword('password123'); }}
+                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300">
                 <strong>Admin:</strong> admin@haqms.com
               </button>
-              <button
-                type="button"
-                onClick={() => { setEmail('reception1@haqms.com'); setPassword('password123'); }}
-                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300"
-              >
+              <button type="button" onClick={() => { setEmail('reception1@haqms.com'); setPassword('password123'); }}
+                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300">
                 <strong>Receptionist:</strong> reception1@haqms.com
               </button>
-              <button
-                type="button"
-                onClick={() => { setEmail('doctor1@haqms.com'); setPassword('password123'); }}
-                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300"
-              >
+              <button type="button" onClick={() => { setEmail('doctor1@haqms.com'); setPassword('password123'); }}
+                className="text-left p-2 rounded bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/10 hover:text-teal-600 dark:hover:text-teal-400 transition-colors text-slate-600 dark:text-slate-300">
                 <strong>Doctor:</strong> doctor1@haqms.com
               </button>
             </div>

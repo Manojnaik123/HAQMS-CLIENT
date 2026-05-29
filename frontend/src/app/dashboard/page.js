@@ -4,27 +4,18 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import Navbar from '@/components/common/Navbar';
 import { useRouter } from 'next/navigation';
-import { 
-  Users, CalendarDays, Activity, Search, Sparkles, UserPlus, 
+import {
+  Users, CalendarDays, Activity, Search, Sparkles, UserPlus,
   Trash2, ClipboardList, TrendingUp, DollarSign, Award, Clock,
-  ArrowRight, ShieldAlert, CheckCircle, Volume2
+  ArrowRight, ShieldAlert, CheckCircle, Volume2,
+  BugOff
 } from 'lucide-react';
+import { patientSchema } from '../../schemas/patient'
 
 export default function Dashboard() {
-  const { user, token, API_BASE_URL, logout } = useAuth();
-  const router = useRouter();
+  const { user, loading, API_BASE_URL, logout, authFetch } = useAuth();
 
-  // Navigation Guard
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-    }
-  }, [user]);
-
-  if (!user) return null;
-
-  // Global State
-  const [activeTab, setActiveTab] = useState(user.role === 'ADMIN' ? 'reports' : user.role === 'RECEPTIONIST' ? 'patients' : 'appointments');
+  const [activeTab, setActiveTab] = useState('appointments');
 
   // ==========================================
   // STATE FOR RECEPTIONIST WORKFLOWS
@@ -34,7 +25,7 @@ export default function Dashboard() {
   const [patientSearch, setPatientSearch] = useState('');
   const [patientGender, setPatientGender] = useState('All');
   const [patientsPagination, setPatientsPagination] = useState({ page: 1, totalPages: 1 });
-  
+
   // Registration Form
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
@@ -46,6 +37,8 @@ export default function Dashboard() {
 
   // Queue and Appointment Booking
   const [doctorsList, setDoctorsList] = useState([]);
+  const [specilizationList, setSpecilizationList] = useState([]);
+  const [specilization, setSpecilization] = useState('All');
   const [bookingPatientId, setBookingPatientId] = useState('');
   const [bookingDoctorId, setBookingDoctorId] = useState('');
   const [bookingDate, setBookingDate] = useState('');
@@ -67,25 +60,33 @@ export default function Dashboard() {
   const [adminReportLoading, setAdminReportLoading] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
 
+
+  const router = useRouter();
+
   // ==========================================
   // RECEPTIONIST FUNCTIONS
   // ==========================================
-  
+
   // Fetch Patients List
   const fetchPatients = async (page = 1) => {
+    console.log('reached to fetch all patients');
+
     setPatientsLoading(true);
     try {
       // Inefficient memory pagination called from client
       const res = await fetch(`${API_BASE_URL}/patients?page=${page}&limit=5&search=${patientSearch}&gender=${patientGender}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        credentials: 'include',
       });
-      const data = await res.json();
-      if (data.success) {
-        setPatients(data.patients);
+
+      const response = await res.json();
+
+      if (response.success) {
+        setPatients(response.data.patients);
         setPatientsPagination({
-          page: data.pagination.page,
-          totalPages: data.pagination.totalPages,
-          totalPatients: data.pagination.totalPatients
+          page: response.data.pagination.page,
+          totalPages: response.data.pagination.totalPages,
+          totalPatients: response.data.pagination.totalPatients
         });
       }
     } catch (e) {
@@ -95,48 +96,61 @@ export default function Dashboard() {
     }
   };
 
-  // Trigger Patient List Fetch (Every keystroke trigger re-renders parent! - Performance bug)
-  useEffect(() => {
-    if (user.role === 'RECEPTIONIST' || user.role === 'ADMIN') {
-      fetchPatients(1);
-    }
-  }, [patientSearch, patientGender]);
-
   // Fetch Doctors for booking drop-down
   const fetchDoctorsDropdown = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/doctors`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        credentials: 'include',
       });
-      const data = await res.json();
-      setDoctorsList(data);
+
+      const response = await res.json();
+
+      if (response.success) {
+        setDoctorsList(response.data);
+        const specializations = [
+          'All',
+          ...new Set(response.data.map(doc => doc.specialization).filter(Boolean))
+        ];
+        setSpecilizationList(specializations);
+      } else {
+        console.log(response.message)
+      }
     } catch (e) {
       console.error(e);
     }
   };
-
-  useEffect(() => {
-    fetchDoctorsDropdown();
-  }, []);
 
   // Handle Patient Registration
   const handleRegisterPatient = async (e) => {
     e.preventDefault();
     setRegMessage('');
 
-    // INCONSISTENT VALIDATION: Receptionist form doesn't validate telephone structure on client, 
-    // leading to database pollution (e.g. text telephone values)
-    if (!regName || !regPhone || !regAge) {
-      setRegMessage('Error: Name, Age and Phone number are required.');
+    const patientData = {
+      name: regName,
+      email: regEmail,
+      phoneNumber: regPhone,
+      age: regAge,
+      gender: regGender,
+      medicalHistory: regHistory,
+    };
+
+    const result = patientSchema.safeParse(patientData);
+
+    if (!result.success) {
+      const firstError =
+        Object.values(result.error.flatten().fieldErrors)[0]?.[0];
+
+      setRegMessage(`Error: ${firstError}`);
       return;
     }
 
     try {
       const res = await fetch(`${API_BASE_URL}/patients`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           name: regName,
@@ -149,15 +163,14 @@ export default function Dashboard() {
       });
 
       const data = await res.json();
-      if (res.ok) {
+
+      if (data.success) {
         setRegMessage('Success: Patient registered successfully!');
-        // Clear fields
         setRegName('');
         setRegEmail('');
         setRegPhone('');
         setRegAge('');
         setRegHistory('');
-        // Refresh directory
         fetchPatients(1);
       } else {
         setRegMessage(`Error: ${data.error || 'Failed to register'}`);
@@ -180,9 +193,9 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE_URL}/appointments`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           patientId: bookingPatientId,
@@ -193,6 +206,8 @@ export default function Dashboard() {
       });
 
       const data = await res.json();
+      console.log('book appointment', data);
+
       if (res.ok) {
         setBookingMessage('Success: Appointment booked successfully!');
         setBookingReason('');
@@ -211,10 +226,14 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE_URL}/patients/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
-      if (res.ok) {
+
+      if (data.success) {
         alert(data.message || 'Patient deleted.');
         fetchPatients(patientsPagination.page);
       } else {
@@ -231,14 +250,17 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE_URL}/queue/checkin`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ patientId, doctorId, appointmentId })
       });
       const data = await res.json();
+      console.log('queuecheckin', data);
+
       if (res.ok) {
+
         setCheckinMessage(`Checked in! Generated Token #${data.token.tokenNumber}`);
         if (user.role === 'DOCTOR') fetchDoctorWorklist();
       } else {
@@ -261,16 +283,22 @@ export default function Dashboard() {
 
       // 1. Fetch appointments for this doctor (N+1 database queries triggers inside server)
       const appRes = await fetch(`${API_BASE_URL}/appointments?doctorId=${matchedDoc.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        credentials: 'include',
       });
       const appData = await appRes.json();
+
+      console.log('fetch doctorworklist', appData);
+
+
       if (appData.success) {
         setDoctorAppointments(appData.appointments);
       }
 
       // 2. Fetch queue list for this doctor today
       const queueRes = await fetch(`${API_BASE_URL}/queue?doctorId=${matchedDoc.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        credentials: 'include',
       });
       const queueData = await queueRes.json();
       setDoctorQueue(queueData);
@@ -280,20 +308,14 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    if (user.role === 'DOCTOR' && doctorsList.length > 0) {
-      fetchDoctorWorklist();
-    }
-  }, [doctorsList]);
-
   // Update token status (WAITING -> CALLING -> COMPLETED / SKIPPED)
   const handleUpdateQueueStatus = async (tokenId, newStatus) => {
     try {
       const res = await fetch(`${API_BASE_URL}/queue/${tokenId}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -310,9 +332,9 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE_URL}/appointments/${appId}`, {
         method: 'PATCH',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ status: 'COMPLETED' })
       });
@@ -327,18 +349,18 @@ export default function Dashboard() {
   // ==========================================
   // ADMIN SYSTEM WORKFLOWS
   // ==========================================
-  
+
   // Slow report generator fetch
   const generateSystemReport = async () => {
     setAdminReportLoading(true);
     try {
-      // Calls slow nested aggregation endpoint
       const res = await fetch(`${API_BASE_URL}/reports/doctor-stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        credentials: 'include',
       });
-      const data = await res.json();
-      if (data.success) {
-        setAdminReportData(data);
+      const response = await res.json();
+      if (response.success) {
+        setAdminReportData(response.data);
       }
     } catch (e) {
       console.error(e);
@@ -347,29 +369,83 @@ export default function Dashboard() {
     }
   };
 
-  // Search Doctors (SQL Injection vulnerable API!)
-  const searchPhysiciansAdmin = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/doctors?search=${adminSearchQuery}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setDoctorsList(data);
-      } else {
-        alert(`API Error: ${data.sqlMessage || data.error}`);
-      }
-    } catch (e) {
-      console.error(e);
+  // Navigation Guard
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
     }
-  };
+  }, [user, loading]);
+
+  const defaultTab =
+    user?.role === 'ADMIN'
+      ? 'reports'
+      : user?.role === 'RECEPTIONIST'
+        ? 'patients'
+        : 'appointments';
+
+  useEffect(() => {
+    if (user?.role) {
+      setActiveTab(defaultTab);
+    }
+  }, [user]);
+
+  // Trigger Patient List Fetch (Every keystroke trigger re-renders parent! - Performance bug)
+  useEffect(() => {
+    if (loading) return;
+    if (user?.role !== 'RECEPTIONIST' && user?.role !== 'ADMIN') return;
+
+    // Wait 400ms after user stops typing before fetching
+    const debounceTimer = setTimeout(() => {
+      fetchPatients(1);
+    }, 400);
+
+    // Cleanup — cancels the timer if user types again within 400ms
+    return () => clearTimeout(debounceTimer);
+  }, [patientSearch, patientGender, user]);
+
+
+  useEffect(() => {
+    fetchDoctorsDropdown();
+  }, []);
+
+
+  useEffect(() => {
+
+    if (loading) return
+    console.log(user);
+
+    if (user?.role === 'DOCTOR') {
+      console.log('2');
+
+      fetchDoctorWorklist();
+    }
+  }, [doctorsList]);
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-slate-400 text-sm animate-pulse">Verifying session...</p>
+    </div>
+  );
+
+
+  if (!user) return null;
+
+  const filteredDoctorsList = doctorsList.filter((doc) => {
+    const matchesSearch =
+      doc.name.toLowerCase().includes(adminSearchQuery.toLowerCase());
+
+    const matchesSpec =
+      specilization === 'All' || doc.specialization === specilization;
+
+    return matchesSearch && matchesSpec;
+  });
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-background ">
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 sm:p-8">
-        
+
         {/* Navigation Tabs based on Role */}
         <div className="flex border-b border-slate-200 dark:border-slate-800 mb-8 overflow-x-auto gap-4">
           {user.role === 'ADMIN' && (
@@ -507,15 +583,17 @@ export default function Dashboard() {
                                 >
                                   Check In
                                 </button>
-                                
+
                                 {/* Security flaw testing: Receptionist or doctor can delete since check is bypassed */}
-                                <button
-                                  onClick={() => handleDeletePatient(p.id)}
-                                  className="text-xxs p-1 rounded bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-colors"
-                                  title="Delete patient record"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                {user.role === 'ADMIN' && (
+                                  <button
+                                    onClick={() => handleDeletePatient(p.id)}
+                                    className="text-xxs p-1 rounded bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-colors"
+                                    title="Delete patient record"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -740,7 +818,7 @@ export default function Dashboard() {
 
               <div className="space-y-6">
                 <div className="p-4 rounded-xl border border-teal-500/25 bg-teal-500/10 text-slate-700 dark:text-slate-300 text-xs leading-5">
-                  <strong>Token Generation Engine Note:</strong> Direct arrivals bypass appointments. The token engine automatically fetches the current days maximum token size and increments. 
+                  <strong>Token Generation Engine Note:</strong> Direct arrivals bypass appointments. The token engine automatically fetches the current days maximum token size and increments.
                   <span className="block mt-1 font-bold text-rose-500 uppercase tracking-wide">Warning: Vulnerable to check-in race conditions!</span>
                 </div>
 
@@ -878,7 +956,7 @@ export default function Dashboard() {
                       Gender: {selectedPatientHistory.gender} | Contact: {selectedPatientHistory.phoneNumber}
                     </p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setSelectedPatientHistory(null)}
                     className="text-xs font-bold text-slate-400 hover:text-slate-600"
                   >
@@ -888,7 +966,7 @@ export default function Dashboard() {
 
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 text-xs space-y-2">
                   <h4 className="font-bold text-slate-400 uppercase tracking-wider">Clinical Background Information</h4>
-                  
+
                   {/* FRONTEND CRASH BUG:
                       Assuming medicalHistory is always populated. Accesses a method on a nullable property
                       without optional chaining! If medicalHistory is null (which is the case for Batman, Clark Kent, etc.),
@@ -900,8 +978,8 @@ export default function Dashboard() {
 
                 <div className="pt-2 flex justify-between items-center text-xs">
                   {/* Incomplete Missing Route trigger -> will route to 404 page! */}
-                  <Link 
-                    href={`/patients/${selectedPatientHistory.id}/history-records`} 
+                  <Link
+                    href={`/patients/${selectedPatientHistory.id}/history-records`}
                     className="text-teal-600 font-extrabold hover:underline flex items-center gap-1"
                   >
                     View Diagnostic Reports Details (Legacy App)
@@ -918,7 +996,7 @@ export default function Dashboard() {
             ============================================================== */}
         {activeTab === 'queue' && (
           <div className="glass p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md">
-            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2 mb-4">
+            <h3 className="text-lg font-extrabold text-foreground flex items-center gap-2 mb-4">
               <Clock className="h-5 w-5 text-teal-600" />
               Active Operations Queue Controller
             </h3>
@@ -1026,7 +1104,7 @@ export default function Dashboard() {
                     <Clock className="h-5 w-5 text-amber-500 shrink-0" />
                     <div>
                       <strong>Performance Diagnostic:</strong> API execution resolved in{' '}
-                      <span className="font-bold text-amber-500">{adminReportData.timeTakenMs} ms</span>. 
+                      <span className="font-bold text-amber-500">{adminReportData.timeTakenMs} ms</span>.
                       Sequential nested database calls loops reduce throughput. Optimization using Promise.all or single join aggregate is required.
                     </div>
                   </div>
@@ -1035,18 +1113,18 @@ export default function Dashboard() {
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div className="p-4 bg-slate-500/5 border border-slate-200 dark:border-slate-800 rounded-xl">
                       <span className="text-xxs uppercase tracking-wider text-slate-400 font-bold">Total Physicians</span>
-                      <h4 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{adminReportData.data.length}</h4>
+                      <h4 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{adminReportData.reportData.length}</h4>
                     </div>
                     <div className="p-4 bg-slate-500/5 border border-slate-200 dark:border-slate-800 rounded-xl">
                       <span className="text-xxs uppercase tracking-wider text-slate-400 font-bold">Sum appointments</span>
                       <h4 className="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">
-                        {adminReportData.data.reduce((sum, item) => sum + item.totalAppointments, 0)}
+                        {adminReportData.reportData.reduce((sum, item) => sum + item.totalAppointments, 0)}
                       </h4>
                     </div>
                     <div className="p-4 bg-slate-500/5 border border-slate-200 dark:border-slate-800 rounded-xl">
                       <span className="text-xxs uppercase tracking-wider text-slate-400 font-bold">Total Sales ($)</span>
                       <h4 className="text-2xl font-black text-teal-600 dark:text-teal-400 mt-1">
-                        ${adminReportData.data.reduce((sum, item) => sum + item.revenue, 0)}
+                        ${adminReportData.reportData.reduce((sum, item) => sum + item.revenue, 0)}
                       </h4>
                     </div>
                   </div>
@@ -1064,7 +1142,7 @@ export default function Dashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {adminReportData.data.map((item) => (
+                        {adminReportData.reportData.map((item) => (
                           <tr key={item.id} className="hover:bg-slate-500/5 transition-colors">
                             <td className="py-3.5 font-bold text-slate-800 dark:text-slate-200">
                               {item.name}
@@ -1103,7 +1181,7 @@ export default function Dashboard() {
             </div>
 
             <div className="flex gap-4">
-              <div className="relative flex-1 rounded-lg shadow-sm">
+              <div className="relative flex-1 rounded-lg shadow-sm flex gap-4">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                   <Search className="h-4 w-4" />
                 </div>
@@ -1111,33 +1189,32 @@ export default function Dashboard() {
                   type="text"
                   value={adminSearchQuery}
                   onChange={(e) => setAdminSearchQuery(e.target.value)}
-                  placeholder="Enter physician name search criteria (raw syntax supported)..."
+                  placeholder="Search physician by name..."
                   className="block w-full pl-9 pr-3 py-2 border border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                 />
+                <select
+                  value={specilization}
+                  onChange={(e) => setSpecilization(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 rounded-lg text-slate-900 dark:text-slate-100 text-sm focus:outline-none"
+                >
+                  {specilizationList.map((spec) => (
+                    <option key={spec} value={spec}>{spec}</option>
+                  ))}
+                </select>
               </div>
-
-              <button
-                onClick={searchPhysiciansAdmin}
-                className="glow-btn px-5 py-2 bg-slate-900 text-white dark:bg-teal-500 dark:text-slate-950 font-bold text-xs rounded-lg hover:bg-slate-800 dark:hover:bg-teal-400 transition-colors"
-              >
-                Execute SQL Query
-              </button>
             </div>
 
-            <div className="p-3 bg-rose-500/10 text-rose-500 text-xs rounded-lg border border-rose-500/20 font-semibold leading-5 flex gap-3">
-              <ShieldAlert className="h-5 w-5 shrink-0" />
+            <div className="p-3 bg-rose-500/10 text-green-500 text-xs rounded-lg border border-green-500/20 font-semibold leading-5 flex gap-3">
+              <BugOff className="h-5 w-5 shrink-0" />
               <div>
-                <strong>SQL Vulnerability alert:</strong> This search executes raw interpolation: 
-                <code className="block bg-black/10 dark:bg-black/30 p-1.5 rounded mt-1 font-mono">
-                  SELECT * FROM &quot;Doctor&quot; WHERE name ILIKE &apos;%&#123;query&#125;%&apos;
-                </code>
-                Can be audited by inputting standard SQL injection strings to leak full user login lists.
+                <strong>SQL Vulnerability Fixed:</strong> This search now dosent send request to backend with vulnarable query.
+                Instead it filters based on the initial pull of doctors
               </div>
             </div>
 
             {/* Doctors Result List */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {doctorsList.map((doc) => (
+              {filteredDoctorsList.map((doc) => (
                 <div
                   key={doc.id}
                   className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-500/5 flex flex-col justify-between"
