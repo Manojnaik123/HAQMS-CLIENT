@@ -11,6 +11,18 @@ const appointmentRoutes = require('./routes/appointments');
 const queueRoutes = require('./routes/queue');
 const reportRoutes = require('./routes/reports');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+const { errorResponse } = require('./utils/api-response');
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,                  // max 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: errorResponse('Too many requests, please try again later.'),
+});
+
+app.use(generalLimiter);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
