@@ -257,7 +257,6 @@ export default function Dashboard() {
         body: JSON.stringify({ patientId, doctorId, appointmentId })
       });
       const data = await res.json();
-      console.log('queuecheckin', data);
 
       if (res.ok) {
 

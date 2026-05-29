@@ -1,9 +1,22 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticate, authorize } = require('../middleware/auth');
+const { successResponse, errorResponse } = require('../utils/api-response');
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+const PATIENT_SELECT = {
+  id: true,
+  name: true,
+  phoneNumber: true,
+};
+
+const DOCTOR_SELECT = {
+  id: true,
+  name: true,
+  specialization: true,
+};
 
 // GET /api/queue
 // List all active queue tokens
@@ -64,22 +77,21 @@ router.post('/checkin', authenticate, authorize('ADMIN', 'RECEPTIONIST'), async 
 
       return tx.queueToken.create({
         data: {
-          tokenNumber:   nextTokenNumber,
+          tokenNumber: nextTokenNumber,
           patientId,
           doctorId,
           appointmentId: appointmentId || null,
-          status:        'WAITING',
+          status: 'WAITING',
         },
         include: {
           patient: { select: PATIENT_SELECT },
-          doctor:  { select: DOCTOR_SELECT },
+          doctor: { select: DOCTOR_SELECT },
         },
       });
     });
 
     return res.status(201).json(successResponse('Checked in successfully. Token generated.', newToken));
   } catch (error) {
-    console.error('Queue check-in error:', error);
     return res.status(500).json(errorResponse('Check-in failed'));
   }
 });
