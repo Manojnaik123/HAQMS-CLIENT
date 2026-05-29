@@ -1,47 +1,84 @@
 const jwt = require('jsonwebtoken');
+const { errorResponse } = require('../utils/api-response');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'my-super-secret-secret-key-12345!!!';
 
-// Authentication middleware
+
+// changes - 
+// now using cookies based authentication, safer than previous way were token was directly stored in the local storage 
+// using common response object 
 const authenticate = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Access denied. No token provided.' });
+  let token = null;
+
+  // Priority 1: HttpOnly cookie (browser clients)
+  if (req.cookies && req.cookies.haqms_token) {
+    token = req.cookies.haqms_token;
+  }
+  // Priority 2: Authorization header (API clients / Postman)
+  else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return res.status(401).json(errorResponse('Not authenticated. Please log in.'));
+  }
 
   try {
-    // SECURITY BUG: The verification is weak. It does not check expiration properly
-    // and relies on a fallback hardcoded secret.
-    const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }); 
-    
-    // Add user details to request object
+    const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
-    // IMPROPER ERROR HANDLING: Leaks full error details including secret key mismatches to the client
-    return res.status(401).json({ error: 'Invalid token.', details: error.message });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json(errorResponse('Session expired. Please log in again.'));
+    }
+    return res.status(401).json(errorResponse('Invalid token. Please log in again.'));
   }
 };
 
-// Role authorization middleware
-const authorize = (roles = []) => {
-  if (typeof roles === 'string') {
-    roles = [roles];
-  }
+// changes - 
+// added this middleware to permit based on role 
+//  used common response object 
+const authorize = (...allowedRoles) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user?.id) {
+        return res.status(401).json(errorResponse('Unauthorized'));
+      }
 
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized. User context missing.' });
+      // fetch fresh user from DB
+      const user = await prisma.user.findUnique({
+        where: {
+          id: req.user.id
+        },
+        select: {
+          id: true,
+          role: true,
+          name: true,
+          email: true
+        }
+      });
+
+      if (!user) {
+        return res.status(401).json(errorResponse('User not found'));
+      }
+
+      if (
+        allowedRoles.length > 0 &&
+        !allowedRoles.includes(user.role)
+      ) {
+        return res.status(403).json(errorResponse('Forbidden'));
+      }
+
+      req.user = user;
+
+      next();
+
+    } catch (error) {
+      return res.status(500).json(errorResponse('Authorization failed'));
     }
-
-    // Role-based verification
-    if (roles.length && !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: `Forbidden. Requires role: ${roles.join(' or ')}` });
-    }
-
-    next();
   };
 };
 

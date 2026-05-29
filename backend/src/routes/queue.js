@@ -44,6 +44,7 @@ router.post('/checkin', authenticate, async (req, res) => {
     }
 
     const today = new Date();
+
     today.setHours(0, 0, 0, 0);
 
     // 1. Fetch current maximum token number for this doctor today
@@ -58,6 +59,7 @@ router.post('/checkin', authenticate, async (req, res) => {
     });
 
     const currentMax = maxTokenResult._max.tokenNumber || 0;
+
     const nextTokenNumber = currentMax + 1;
 
     // PERFORMANCE/CONCURRENCY BUG: Artificial sleep to widen the race condition window.
@@ -71,7 +73,7 @@ router.post('/checkin', authenticate, async (req, res) => {
         tokenNumber: nextTokenNumber,
         patientId,
         doctorId,
-        appointmentId: appointmentId || null,
+        // appointmentId: appointmentId || null,
         status: 'WAITING',
       },
       include: {

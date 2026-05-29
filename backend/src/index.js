@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
 const authRoutes = require('./routes/auth');
@@ -11,12 +10,16 @@ const doctorRoutes = require('./routes/doctors');
 const appointmentRoutes = require('./routes/appointments');
 const queueRoutes = require('./routes/queue');
 const reportRoutes = require('./routes/reports');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Enable CORS for all origins (weak/broad CORS config)
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true,
+}));
 
 // Body parser
 app.use(express.json());
@@ -27,10 +30,15 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(cookieParser());
+
 // Register routes
 app.use('/api/auth', authRoutes);
+
 app.use('/api/patients', patientRoutes);
+
 app.use('/api/doctors', doctorRoutes);
+
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/queue', queueRoutes);
 app.use('/api/reports', reportRoutes);

@@ -1,43 +1,28 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
+const { successResponse, errorResponse } = require('../utils/api-response');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
+
+// chaanges - 
+// Added authorize middleware to permit only admins and RECEPTIONIST
+// sending all the doctors to the front end 
+// usedd common response object 
 // GET /api/doctors
 // Retrieve list of doctors with special search filtering
 // SECURITY BUG: SQL Injection vulnerability in the search parameter!
 // Uses queryRawUnsafe with string concatenation instead of parameterized inputs.
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { search, specialization } = req.query;
-
-    let query = 'SELECT * FROM "Doctor"';
-    const conditions = [];
-
-    if (search) {
-      // Direct string interpolation - VULNERABLE TO SQL INJECTION!
-      // Example exploit: search=House%' UNION SELECT id, email, password, name, role, '09:00', '17:00', 0, id FROM "User" --
-      conditions.push(`name ILIKE '%${search}%'`);
-    }
-
-    if (specialization && specialization !== 'All') {
-      conditions.push(`specialization = '${specialization}'`);
-    }
-
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
-
-    console.log(`[SQL-DEBUG] Executing Query: ${query}`);
-    const doctors = await prisma.$queryRawUnsafe(query);
-
-    // Inconsistent API formatting (directly sending array)
-    res.json(doctors);
+    const doctors = await prisma.doctor.findMany({
+      orderBy: { name: 'asc' },
+    });
+    return res.status(200).json(successResponse("Successfuly fetched Doctors", doctors));
   } catch (error) {
-    // Leaks query syntax details to candidate/attacker
-    res.status(500).json({ error: 'Database execution failure', sqlMessage: error.message });
+    return res.status(500).json(errorResponse('Failed to fetch doctors'));
   }
 });
 
@@ -50,7 +35,7 @@ router.get('/stats', authenticate, async (req, res) => {
 
     // Independent database calls are run sequentially with await, stalling the event loop
     const totalDoctors = await prisma.doctor.count();
-    
+
     const surgeonsCount = await prisma.doctor.count({
       where: { department: 'Surgery' },
     });
