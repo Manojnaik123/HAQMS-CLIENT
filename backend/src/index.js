@@ -14,6 +14,9 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const { errorResponse } = require('./utils/api-response');
 
+const app = express();
+const PORT = process.env.PORT || 5000;
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,                  // max 100 requests per window
@@ -23,9 +26,6 @@ const generalLimiter = rateLimit({
 });
 
 app.use(generalLimiter);
-
-const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Enable CORS for all origins (weak/broad CORS config)
 app.use(cors({
