@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 const VALID_STATUSES = ['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'];
 
-// GET /api/appointments
+// GET /api/appointments  
 router.get('/', authenticate, authorize('ADMIN', 'RECEPTIONIST'), async (req, res) => {
   try {
     const { doctorId, status } = req.query;
