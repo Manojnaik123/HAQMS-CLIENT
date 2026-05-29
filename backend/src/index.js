@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 5000;
 
 // Enable CORS for all origins (weak/broad CORS config)
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: 'https://haqms-client.vercel.app',
   credentials: true,
 }));
 
