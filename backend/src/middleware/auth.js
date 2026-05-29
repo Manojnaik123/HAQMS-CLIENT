@@ -11,6 +11,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'my-super-secret-secret-key-12345!!
 // now using cookies based authentication, safer than previous way were token was directly stored in the local storage 
 // using common response object 
 const authenticate = (req, res, next) => {
+  console.log('reached here in authenticate');
+  
   let token = null;
 
   // Priority 1: HttpOnly cookie (browser clients)
@@ -23,6 +25,8 @@ const authenticate = (req, res, next) => {
   }
 
   if (!token) {
+    console.log('not authenticated');
+    
     return res.status(401).json(errorResponse('Not authenticated. Please log in.'));
   }
 
@@ -31,6 +35,8 @@ const authenticate = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
+    console.log('in catch block');
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json(errorResponse('Session expired. Please log in again.'));
     }
@@ -42,7 +48,11 @@ const authenticate = (req, res, next) => {
 // added this middleware to permit based on role 
 //  used common response object 
 const authorize = (...allowedRoles) => {
+  console.log('reached inside the authorize');
+  
   return async (req, res, next) => {
+    console.log('from authorize',req.user.id);
+    
     try {
       if (!req.user?.id) {
         return res.status(401).json(errorResponse('Unauthorized'));
